@@ -1,0 +1,17 @@
+
+
+
+
+CHIP RAM8K {
+    IN in[16], load, address[13];
+    OUT out[16];
+
+    PARTS:
+    DMux(in = load, sel = address[0], 
+    	a = l1, b = l2); 
+
+    RAM4K(in = in, load = l1, address = address[1..12], out = ram1); 
+    RAM4K(in = in, load = l2, address = address[1..12], out = ram2); 
+
+    Mux16(a = ram1, b = ram2, sel = address[0], out = out); 
+ }

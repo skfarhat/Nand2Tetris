@@ -1,0 +1,111 @@
+// This file is part of www.nand2tetris.org
+// and the book "The Elements of Computing Systems"
+// by Nisan and Schocken, MIT Press.
+// File name: projects/05/CPU.hdl
+
+/**
+ * The Hack CPU (Central Processing unit), consisting of an ALU,
+ * two registers named A and D, and a program counter named PC.
+ * The CPU is designed to fetch and execute instructions written in 
+ * the Hack machine language. In particular, functions as follows:
+ * Executes the inputted instruction according to the Hack machine 
+ * language specification. The D and A in the language specification
+ * refer to CPU-resident registers, while M refers to the external
+ * memory location addressed by A, i.e. to Memory[A]. The inM input 
+ * holds the value of this location. If the current instruction needs 
+ * to write a value to M, the value is placed in outM, the address 
+ * of the target location is placed in the addressM output, and the 
+ * writeM control bit is asserted. (When writeM==0, any value may 
+ * appear in outM). The outM and writeM outputs are combinational: 
+ * they are affected instantaneously by the execution of the current 
+ * instruction. The addressM and pc outputs are clocked: although they 
+ * are affected by the execution of the current instruction, they commit 
+ * to their new values only in the next time step. If reset==1 then the 
+ * CPU jumps to address 0 (i.e. pc is set to 0 in next time step) rather 
+ * than to the address resulting from executing the current instruction. 
+ */
+
+
+// CHECK that the ALU inputs need not be swapped 
+CHIP CPU {
+
+    IN  inM[16],         // M value input  (M = contents of RAM[A])
+        instruction[16], // Instruction for execution
+        reset;           // Signals whether to re-start the current
+                         // program (reset==1) or continue executing
+                         // the current program (reset==0).
+
+    OUT outM[16],        // M value output
+        writeM,          // Write to M? 
+        addressM[15],    // Address in data memory (of M)
+        pc[15];          // address of next instruction
+
+    PARTS:
+
+    And(a = instruction[15], b = instruction[3], out = writeM);
+    Mux16(a = instruction, b = outback, sel = instruction[15], out = inA); 
+    
+    
+    /* ----------------------------------------------------------------- */ 
+    /* A register 
+    ** load:  if instruction is an A instr (bit 15), 
+    **        or D instruction and comp bit (bit 5) is set 
+    ** output: goes to addressM, PC, and Mux
+    */ 
+    Not(in = instruction[15], out = Ainstr); 
+    And(a = instruction[5], b = instruction[15], out = Atemp); 
+    Or(a = Atemp, b = Ainstr, out = loadA); 
+    ARegister(in = inA, load = loadA, 
+                            out = outA,
+                            out = inPC,
+                            out[0..14] = addressM);     
+    /* ----------------------------------------------------------------- */ 
+    /* D register
+    ** only loaded if D instruction AND comp bit (bit 4) is set
+    ** output goes to the ALU in
+    **/
+    And(a = instruction[4], b = instruction[15], out = loadD); 
+    DRegister(in = inD, load = loadD, out = inALU1);                
+    /* ----------------------------------------------------------------- */ 
+    /* a-bit --> instruction[12]; */ 
+    Mux16(a = outA, b = inM, sel = instruction[12], out = inALU2); 
+    
+    /* ALU * bits 11-06 are control bits * */ 
+    ALU(x = inALU1, y = inALU2, 
+    zx = instruction[11], 
+    nx = instruction[10],
+    zy = instruction[09],
+    ny = instruction[08],
+    f  = instruction[07],
+    no = instruction[06],
+    out = outM, 
+    out = inD, 
+    out = outback,
+    zr = zrout, 
+    ng = ngout); 
+
+    /* ----------------------------------------------------------------- */ 
+    /* PC 
+    ** jump bits 0, 1, 2 
+    ** the instruction must be a D instruction to jump. 
+    ** Thus the AND gate after the mux. 
+    */ 
+    Not(in = zrout, out = nzr);                 // != 0
+    Not(in = ngout, out = nneg);                
+    Or(a = zrout, b = ngout, out = negorzero);  // <= 0
+    And(a = nzr, b = nneg, out = positive);      // > 0
+    Mux8(
+        a = false,      // NO JMP
+        b = positive,   // 001 JGT
+        c = zrout,      // 010 JEQ
+        d = nneg,       // 011 JGE
+        e = ngout,      // 100 JLT
+        f = nzr,        // 101 JNE
+        g = negorzero,  // 110 JLE
+        h = true,       // 111 JMP
+        sel = instruction[0..2], 
+        out = muxOut
+        ); 
+    And(a = muxOut, b = instruction[15], out = loadPC); 
+    PC(in = inPC, load = loadPC, inc = true, reset = reset, out[0..14] = pc); 
+}
